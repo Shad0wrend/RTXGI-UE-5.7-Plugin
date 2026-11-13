@@ -305,7 +305,11 @@ class FRayTracingRTXGIProbeUpdateRGS : public FGlobalShader
 		SHADER_PARAMETER_TEXTURE(TextureCube, Sky_Texture)
 		SHADER_PARAMETER_SAMPLER(SamplerState, Sky_TextureSampler)
 		SHADER_PARAMETER_STRUCT_REF(FViewUniformShaderParameters, ViewUniformBuffer)
+#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 9)
+		SHADER_PARAMETER_RDG_UNIFORM_BUFFER(FForwardLightUniformParameters, ForwardLightStruct)
+#else
 		SHADER_PARAMETER_RDG_UNIFORM_BUFFER(FRayTracingLightGrid, RayTracingLightGridUniformBuffer)
+#endif
 		SHADER_PARAMETER_RDG_UNIFORM_BUFFER(FSceneUniformParameters, Scene)
 		SHADER_PARAMETER_RDG_UNIFORM_BUFFER(FNaniteRayTracingUniformParameters, NaniteRayTracing)
 	END_SHADER_PARAMETER_STRUCT()
@@ -375,7 +379,11 @@ class FRayTracingRTXGIProbeViewRGS : public FGlobalShader
 		SHADER_PARAMETER_RDG_UNIFORM_BUFFER(FNaniteRayTracingUniformParameters, NaniteRayTracing)
 
 		SHADER_PARAMETER_STRUCT_REF(FViewUniformShaderParameters, ViewUniformBuffer)
+#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 9)
+		SHADER_PARAMETER_RDG_UNIFORM_BUFFER(FForwardLightUniformParameters, ForwardLightStruct)
+#else
 		SHADER_PARAMETER_RDG_UNIFORM_BUFFER(FRayTracingLightGrid, RayTracingLightGridUniformBuffer) // ADD THIS LINE
+#endif
 	END_SHADER_PARAMETER_STRUCT()
 };
 
@@ -1316,7 +1324,11 @@ namespace DDGIVolumeUpdate
 		*PassParameters = DefaultPassParameters;
 		PassParameters->Scene = GetSceneUniformBufferRef(GraphBuilder, View);
 		PassParameters->NaniteRayTracing = Nanite::GetPublicGlobalRayTracingUniformBuffer();
+#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 9)
+		PassParameters->ForwardLightStruct = View.ForwardLightingResources.ForwardLightUniformBuffer;
+#else
 		PassParameters->RayTracingLightGridUniformBuffer = View.RayTracingLightGridUniformBuffer;
+#endif
 		PassParameters->DDGIVolume_PreExposure = View.PreExposure;
 		PassParameters->DDGIVolume_ShouldUsePreExposure = View.Family->EngineShowFlags.Tonemapper;
 		PassParameters->DDGIVolume_IrradianceScalar = FMath::Clamp(CVarDDGIIrradianceScalar.GetValueOnRenderThread(), 0.001f, 1.0f);
@@ -1349,7 +1361,11 @@ namespace DDGIVolumeUpdate
 		}
 
 		PassParameters->ViewUniformBuffer = View.ViewUniformBuffer;
+#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 9)
+		PassParameters->ForwardLightStruct = View.ForwardLightingResources.ForwardLightUniformBuffer;
+#else
 		PassParameters->RayTracingLightGridUniformBuffer = View.RayTracingLightGridUniformBuffer;
+#endif
 		FIntPoint DispatchSize(c_probeVisWidth, c_probeVisHeight);
 
 		GraphBuilder.AddPass(
@@ -1406,7 +1422,11 @@ namespace DDGIVolumeUpdate
 		PassParameters->TLAS = Scene.RayTracingScene.GetLayerView(ERayTracingSceneLayer::Base, View.GetRayTracingSceneViewHandle());
 		PassParameters->RadianceOutput = ProbesRadianceUAV;
 		PassParameters->FrameRandomSeed = GFrameNumber;
+#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 9)
+		PassParameters->ForwardLightStruct = View.ForwardLightingResources.ForwardLightUniformBuffer;
+#else
 		PassParameters->RayTracingLightGridUniformBuffer = View.RayTracingLightGridUniformBuffer;
+#endif
 
 		// Always bound: the shader reads it at runtime for forced scrolling updates
 		PassParameters->DDGIProbeScrollSpace = GraphBuilder.CreateUAV(GraphBuilder.RegisterExternalTexture(VolProxy->ProbesSpace));
@@ -1655,4 +1675,38 @@ FRHIRayTracingShader* GetRayTracingDefaultOpaqueShader(const FGlobalShaderMap* S
 {
 	return ShaderMap->GetShader<FOpaqueShadowHitGroup>().GetRayTracingShader();
 }
+
+#endif
+
+#if ENGINE_MAJOR_VERSION > 5 || (ENGINE_MAJOR_VERSION == 5 && ENGINE_MINOR_VERSION >= 9)
+// UE 5.9: provide metadata locally. bForceCompleteInitialization=true skips the global
+// registration/unique-name check, which would otherwise collide with the Renderer module's
+// registration of "ForwardLightStruct".
+//
+// Only modular builds need this copy: the Renderer module defines the same member through
+// IMPLEMENT_GLOBAL_SHADER_PARAMETER_STRUCT in LightGridInjection.cpp without exporting it, so
+// an editor/game DLL has to supply its own. In a monolithic build every engine object is in
+// the same image, where this definition and the Renderer's are a duplicate symbol
+// (LNK2005), so the engine's definition is used instead.
+#if !IS_MONOLITHIC
+const FShaderParametersMetadata* FForwardLightUniformParameters::GetStructMetadata()
+{
+	ensureMsgf(FShaderParametersMetadataRegistration::IsReadyForRegistration(), TEXT("GetStructMetadata should not be called from a static initializer"));
+	static const FShaderParametersMetadata StaticStructMetadata(
+		FShaderParametersMetadata::EUseCase::UniformBuffer,
+		EUniformBufferBindingFlags::Shader,
+		TEXT("FForwardLightUniformParameters"),
+		TEXT("FForwardLightUniformParameters"),
+		TEXT("ForwardLightStruct"),
+		nullptr,
+		FForwardLightUniformParameters::FTypeInfo::FileName,
+		FForwardLightUniformParameters::FTypeInfo::FileLine,
+		sizeof(FForwardLightUniformParameters),
+		FForwardLightUniformParameters::zzGetMembers(),
+		true,
+		nullptr,
+		FShaderParametersMetadata::EUsageFlags::None);
+	return &StaticStructMetadata;
+}
+#endif // !IS_MONOLITHIC
 #endif

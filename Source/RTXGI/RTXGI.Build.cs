@@ -58,7 +58,10 @@ public class RTXGI : ModuleRules
 		{
 			EngineDirectory + "/Source/Runtime/Renderer/Private",
 			EngineDirectory + "/Source/Runtime/RenderCore/Public",
-            EngineDirectory + "/Source/Runtime/Renderer/Internal"
+            EngineDirectory + "/Source/Runtime/Renderer/Internal",
+			// UE 5.9 moved NaniteQualityScaling.h (included by Renderer/Private/Nanite/NaniteRayTracing.h)
+			// into the Engine module's Internal folder.
+			EngineDirectory + "/Source/Runtime/Engine/Internal"
 		});
 
 		PublicIncludePaths.AddRange(new string[]
